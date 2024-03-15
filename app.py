@@ -1,187 +1,111 @@
-from flask import Flask, render_template, request, redirect, url_for,g, send_from_directory
-import sqlite3
-import os
-from werkzeug.utils import secure_filename
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from Crypto.Cipher import DES3
-import tkinter.messagebox as tkMessageBox
-import subprocess
+from flask import Flask,redirect,url_for,render_template,request
+from cryptography.fernet import Fernet
+import qrcode
+import socket
 
-
-app = Flask(__name__)
-app.secret_key = 'your_secret_key'
-def derive_key(password, salt):
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        iterations=100000,
-        salt=salt,
-        length=32,
-        backend=default_backend()
+def generate_qr_code(text, filename):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
     )
-    return kdf.derive(password.encode('utf-8'))
+    qr.add_data(text)
+    qr.make(fit=True)
 
-# Triple DES encryption function
-def encrypt_text(text, key):
-    cipher = Cipher(algorithms.TripleDES(key), modes.ECB(), backend=default_backend())
-    encryptor = cipher.encryptor()
-    padded_text = text.ljust(16)  # Pad the text to be a multiple of the block size (8 bytes)
-    ciphertext = encryptor.update(padded_text.encode('utf-8')) + encryptor.finalize()
-    return ciphertext
-# Function to create a connection to the SQLite database
-def get_db():
-    db = getattr(g, '_database', None)
-    if db is None:
-        db = g._database = sqlite3.connect("master.db")
-    return db
+    image = qr.make_image(fill_color="black", back_color="white")
+    image.save(filename)
 
-# Function to create tables in the database (execute only once)
-def init_db():
-    with app.app_context():
-        db = get_db()
-        with app.open_resource('schema.sql', mode='r') as f:
-            db.cursor().executescript(f.read())
-        db.commit()
+def send___m(message, host, port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.connect((host, port))
+        sock.sendall(message)
+    finally:
+        sock.close()
+
+def receive_message(port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("0.0.0.0", port))
+    sock.listen(1)
+    conn, addr = sock.accept()
+    try:
+        data = conn.recv(1024).decode()
+        return data
+    finally:
+        conn.close()
+
+
+app=Flask(__name__)
+key = Fernet.generate_key()
+f = Fernet(key)
+generate_qr_code(key, 'static\qrcode.png')
+
+
 @app.route('/')
-def login():
-    return render_template('login.html', error=None)
+def welcome():
+    return render_template('index.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login_post():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+@app.route('/send',methods=['POST','GET'])
+def send():
+    global encrypted_data
+    global message
+    message=''
+    if request.method =='POST':
+        message=(request.form['Welcome to The world of privacy'])
+        abc=bytes(message,'utf-8')
+        encrypted_data = f.encrypt(abc)
+    return render_template('selection.html')
 
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('SELECT * FROM users WHERE username = ? AND password = ?', (username, password))
-        user = cursor.fetchone()
+@app.route('/key', methods=['POST','GET']) 
+def key():   
+ text_to_encode = key
+ output_filename = "static/qrcode.png"
+ generate_qr_code(text_to_encode, output_filename)
+ return render_template('key.html', key=key)
 
-        if user:
-            # Authentication successful
-            return redirect(url_for('home'))
-        else:
-            # Authentication failed
-            return render_template('login.html', error='Invalid credentials')
+@app.route('/qrcode1', methods=['POST','GET'])
+def qrcode1():
+    return render_template('cachy.html', image_url="static\qrcode.png")
 
-    return redirect(url_for('login'))
+@app.route('/encrypted_message', methods=['POST','GET'])
+def encrypted_message():
+    return render_template('encryption.html', encrypted_data = encrypted_data)
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'doc', 'docx'}
+@app.route('/decrypted_message', methods=['POST','GET'])
+def decrypted_message():
+    decrypted_data = f.decrypt(encrypted_data)
+    ab = decrypted_data.decode()
+    return render_template('decryption.html', ab=ab)
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+@app.route('/send_message', methods=['POST','GET'])
+def send_message():
+    return render_template('send_message.html')
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+@app.route('/message_sent', methods=['POST','GET'])
+def message_sent():
+    message=''
+    if request.method =='POST':
+        message=(request.form['Welcome'])
+        age = encrypted_data
+        port = 12345
+        send___m(age,message,port)
+    return render_template('message_sent.html')
 
-@app.route('/file')
-def file():
-    return render_template('file.html')
-@app.route('/download/<filename>')
-def download(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+@app.route('/omessage', methods=['POST','GET'])
+def omessage():
+    return render_template('send_message1.html')
 
-@app.route('/signup', methods=['GET', 'POST'])
-def signup():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
+@app.route('/message_sent1', methods=['POST','GET'])
+def message_sent1():
+    message1=''
+    if request.method =='POST':
+        message1=(request.form['Welcome'])
+        age = message.encode('utf-8')
+        port = 12345
+        send___m(age,message1,port)
+    return render_template('message_sent.html')
 
-        # Perform signup logic and insert data into the database
-        db = get_db()
-        cursor = db.cursor()
-        cursor.execute('INSERT INTO users (username, password) VALUES (?, ?)', (username, password))
-        db.commit()
 
-        return redirect(url_for('login'))
-
-    return render_template('signup.html')
-
-@app.route('/home', methods=['GET', 'POST'])
-def home():
-    user_input = None
-    encrypted_text = None
-
-    return render_template('home.html', user_input=user_input, encrypted_text=encrypted_text)
-@app.route('/words')
-def words():
-    subprocess.call(["python", "tdesEnc.py"])
-    return render_template('home.html')
-@app.route('/wordsde')
-def wordsde():
-    subprocess.call(["python", "tdesDecr.py"])
-    return render_template('home.html')
-@app.route('/filed')
-def filed():
-    # subprocess.call(["python", "fileotpDownl.py"])
-    conn = sqlite3.connect('master.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM encrypted_files')
-    db = cursor.fetchall()
-    conn.close()
-    return render_template('home.html', db = db)
-    
-DATABASE_FILE = 'master.db'
-
-def pad(data):
-    pad_length = 8 - (len(data) % 8)
-    return data + bytes([pad_length] * pad_length)
-
-def unpad(data):
-    pad_length = data[-1]
-    return data[:-pad_length]
-
-def encrypt_data(data, key):
-    cipher = DES3.new(key, DES3.MODE_ECB)
-    padded_data = pad(data)
-    encrypted_data = cipher.encrypt(padded_data)
-    return encrypted_data
-
-def store_encrypted_data_in_database(data, key):
-    connection = sqlite3.connect(DATABASE_FILE)
-    cursor = connection.cursor()
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS encrypted_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data BLOB
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS encrypted_filesN (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data BLOB
-        )
-    ''')
-
-    encrypted_data = encrypt_data(data, key)
-    cursor.execute('INSERT INTO encrypted_files (data) VALUES (?)', (encrypted_data,))
-    cursor.execute('INSERT INTO encrypted_filesN (data) VALUES (?)', (data,))
-
-    connection.commit()
-    connection.close()
-
-@app.route('/', methods=['GET', 'POST'])
-def upload_file():
-    if request.method == 'POST':
-        if 'fileInput' not in request.files:
-            return render_template('file.html', message='No file part')
-
-        file = request.files['fileInput']
-
-        if file.filename == '':
-            return render_template('file.html', message='No selected file')
-
-        key = b'!\x83s\x14\xd3\xbbR\xb5\x08\xc52h4lA\x0euie\x818%\xa19'
-        store_encrypted_data_in_database(file.read(), key)
-
-        return render_template('file.html', message=tkMessageBox.showinfo("info",'File Success...',icon="info"))
-        
-
-    return render_template('/home.html', message='')
-
-if __name__ == '__main__':
-    app.run(debug=True)
-
+if __name__=='__main__':
+     app.run(debug=True)
